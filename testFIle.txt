@@ -1,0 +1,220 @@
+#include <string>
+#include <iostream>
+#include <fstream>
+#include <cstdlib>
+using namespace std;
+
+class prog1 {
+private:
+	static const int MINCONTEXT = 1;
+	static const int MAXCONTEXT = 10;
+	
+	int context;
+	
+	// lines contains the context before the current line, and the line
+	string *lines;
+	int lineidx;	// lines[lineidx] is the line i just read
+	int contextidx;	// the context begins at lines[contextidx]
+		// note we start with contextidx -1 until we read context lines
+
+	int nlines; // remember the # of lines; in c++ arrays don't keep a length
+	
+	string pattern;
+	
+	istream *br;
+	ifstream infile;
+	
+public:
+	prog1(int context) {
+		this->context = context;
+		lines = new string[context + 1];
+		lineidx = context;
+		contextidx = 0;
+		nlines = context + 1;
+	}
+	
+	bool open(const char *file) {
+		infile.open(file);
+		if( infile.is_open() )
+			br = &infile;
+		else {
+			cout << "File " << file << " not found" << endl;
+			return false;
+		}
+		return true;
+	}
+	
+	bool open() {
+		br = &cin;
+		return true;
+	}
+	
+	string getCurline() { return lines[lineidx]; }
+	
+	void printPrevContext() {
+		int linecount, idx;
+
+		idx = contextidx;
+		linecount = context;
+		
+		while( linecount-- > 0 ) {
+			if( !lines[idx].empty() )
+				cout << lines[idx];
+			if( ++idx == nlines )
+				idx = 0;
+		}
+	}
+	
+	bool readLine() {
+		if( context != 0 ) {
+			if( ++contextidx == nlines ) {
+				contextidx = 0;
+			}
+		}
+
+		if( ++lineidx == nlines ) {
+			lineidx = 0;
+		}
+		
+		if( br->good() ) {
+			getline(*br, lines[lineidx]);
+			if( br->good() ) {
+				lines[lineidx] += '\n';
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	int getcontext() { return context; }
+	
+	string getPattern() { return pattern; }
+	void setPattern(string pattern) { this->pattern = pattern; }
+	
+	bool matchPattern() {
+		string line = getCurline();
+		string pattern = getPattern();
+		
+		for( int idx=0; idx<line.length(); idx++ ) {
+			int pidx;
+			
+			for( pidx=0; pidx<pattern.length(); pidx++ ) {
+				// if the line has ended, we're done; return failure
+				if( idx + pidx == line.length() )
+					return false;
+				
+				// dot always matches
+				if( pattern[pidx] == '.' )
+					continue;
+				
+				// backslash dot matches dot; code for a \ at the end of the pattern
+				if( pattern[pidx] == '\\' && 
+						pidx+1 < pattern.length() &&
+						pattern[pidx+1] == '.' &&
+						line[idx+pidx] == '.' ) {
+							++pidx; // note this adds one to skip the backslash, and the loop will skip the dot
+							continue;
+				}
+				
+				if( line[idx+pidx] != pattern[pidx] )
+					break;
+			}
+			
+			if( pidx == pattern.length() )
+				return true;
+		}
+		
+		return false;
+	}
+};
+
+void usage(string msg)
+{
+	cout <<"Usage error: " + msg << endl;
+	cout <<"Correct usage is:" << endl;
+	cout <<"{+n} pattern {file}" << endl;
+	exit(0);
+}
+
+int
+main(int argc, char *argv[])
+{		
+	prog1 *checker;
+
+	/* there may be as few as 1 and as many as 3 args */
+
+	/* possibilities:
+	 * one argument: pattern
+	 * two arguments: +n pattern
+			: pattern file
+	 * three args:	  +n pattern file
+	 */
+
+	if( argc == 1 ) {
+		usage("No arguments specified");
+	}
+
+	int argidx = 1;
+	if( argv[argidx][0] == '+' ) {
+		int ctx = 0;
+		char *cp = &argv[argidx][1];
+
+		if (!*cp)
+			usage("format error on number after +");
+
+		while( isdigit(*cp) ) {
+			ctx *= 10;
+			ctx += *cp - '0';
+			cp++;
+		}
+
+		if( *cp )
+			usage("format error on number after +");
+
+		checker = new prog1( ctx );
+
+		if( checker->getcontext() < 0 || checker->getcontext() > 10 )
+			usage("value of n must be from 1 - 10");
+		argidx = 2;
+	}
+	else
+		checker = new prog1(0);
+
+	if( argidx >= argc ) {
+		// a usage error
+		usage("Pattern is missing");
+	}
+
+	checker->setPattern(argv[argidx]);
+
+	++argidx;
+	if( argidx < argc ) {
+		if( !checker->open(argv[argidx++]) )
+			exit(0);
+	}
+	else {
+		if( !checker->open() )
+			exit(0);
+	}
+
+	if( argidx != argc ) {
+		usage("Too many arguments");
+	}
+	
+	int postMatchLines = 0;
+	
+	while( checker->readLine() ) {
+		bool matches = checker->matchPattern();
+		if( matches ) {
+			if( postMatchLines == 0 ) {
+				checker->printPrevContext();
+			}
+			postMatchLines = checker->getcontext();
+			cout << checker->getCurline();
+		}
+		else if( postMatchLines > 0 ) {
+			cout << checker->getCurline();
+			postMatchLines--;
+		}
+	}
+}
